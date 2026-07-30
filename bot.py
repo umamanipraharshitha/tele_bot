@@ -50,7 +50,7 @@ def log_run(question, response_json):
     with open("run.jsonl", "a") as f:
         f.write(json.dumps(log_entry) + "\n")
 
-# Call Gemini LLM to solve data analysis questions
+# Call Gemini LLM to solve data analysis questions with retries on 429
 def solve_question(question_text):
     prompt = f"""
 You are a highly skilled Data Analyst.
@@ -64,22 +64,28 @@ Example output:
 Question:
 {question_text}
 """
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        # Clean potential markdown formatting
-        if text.startswith("```"):
-            lines = text.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
-        return json.loads(text)
-    except Exception as e:
-        print(f"Error in solve_question: {e}")
-        return {{"error": str(e)}}
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    for attempt in range(5):
+        try:
+            response = model.generate_content(prompt)
+            text = response.text.strip()
+            # Clean potential markdown formatting
+            if text.startswith("```"):
+                lines = text.split("\n")
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                text = "\n".join(lines).strip()
+            return json.loads(text)
+        except Exception as e:
+            err_str = str(e)
+            print(f"Error in solve_question (attempt {attempt+1}): {err_str}")
+            if "429" in err_str or "Quota exceeded" in err_str or "ResourceExhausted" in err_str:
+                time.sleep(15)
+                continue
+            return {"error": err_str}
+    return {"error": "Exhausted all retries due to quota limits"}
 
 # Send message helper
 def send_message(chat_id, text):
