@@ -2,3 +2,4 @@ requests
 google-generativeai
 pandas
 python-dotenv 
+google-genai
